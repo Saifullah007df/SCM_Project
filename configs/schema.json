@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AEGIS synthetic configuration (not clinical guidance)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_id", "demo_heart_rate_upper_bpm", "demo_spo2_lower_percent", "alarm_enabled"],
+  "properties": {
+    "schema_version": {"const": 1, "type": "integer"},
+    "profile_id": {"enum": ["demo-adult", "demo-legacy"]},
+    "demo_heart_rate_upper_bpm": {"type": "number", "minimum": 0, "maximum": 300},
+    "demo_spo2_lower_percent": {"type": "number", "minimum": 0, "maximum": 300},
+    "alarm_enabled": {"type": "boolean"}
+  }
+}

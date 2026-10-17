@@ -1,0 +1,7 @@
+{
+  "alarm_enabled": true,
+  "demo_heart_rate_upper_bpm": 120,
+  "demo_spo2_lower_percent": 90,
+  "profile_id": "demo-adult",
+  "schema_version": 1
+}

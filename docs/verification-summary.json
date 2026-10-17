@@ -1,0 +1,23 @@
+{
+  "backend": {
+    "tests": 28,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "backend_seconds": 16.568,
+  "frontend_build": "passed",
+  "browser": {
+    "journeys": 1,
+    "passed": 1,
+    "viewport_widths": [
+      320,
+      768,
+      1440
+    ],
+    "javascript_errors": 0
+  },
+  "measurement_file": "docs/acceptance-results.json",
+  "measurement_matches_engine": true,
+  "live_phorge_validated": false
+}
