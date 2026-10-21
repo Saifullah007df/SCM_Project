@@ -327,6 +327,48 @@ def create_app(settings=None):
             store.audit('user_created', account['id'], username=body.username, role=body.role)
             return {'username': body.username, 'roles': [body.role]}
 
+
+    @app.get(prefix + '/demo/live-file/{ident}')
+    def demo_live_file(ident: str, account=Depends(user)):
+        if not settings.demo:
+            raise HTTPException(403, 'Demo mode disabled')
+        from backend.files import stable_read
+        path = engine.node_dir(ident) / 'live.json'
+        try:
+            raw = stable_read(path)
+        except OSError:
+            raise HTTPException(404, 'Live configuration file unavailable')
+        return {'node_id': ident, 'path': str(path), 'content': raw.decode('utf-8'),
+                'approved_digest': engine.describe_node(ident)['release']['digest'],
+                'disk_digest': sha(raw)}
+
+    @app.post(prefix + '/demo/live-file/{ident}')
+    def demo_save_live_file(ident: str, request_body: dict, account=Depends(roles('operator'))):
+        if not settings.demo:
+            raise HTTPException(403, 'Demo mode disabled')
+        content = request_body.get('content')
+        if not isinstance(content, str) or len(content.encode('utf-8')) > 65536:
+            raise HTTPException(422, 'Expected a JSON text string of at most 64 KiB')
+        try:
+            json.loads(content)
+        except ValueError:
+            raise HTTPException(422, 'JSON syntax is invalid')
+        # This is deliberately an UNAUTHORIZED direct filesystem edit, not a
+        # baseline deployment. Existing agent detects and recovers it.
+        from backend.files import atomic_write
+        path = engine.node_dir(ident) / 'live.json'
+        with engine.lock(ident):
+            atomic_write(path, content.encode('utf-8'))
+            store.audit('demo_manual_file_edit', account['id'], node_id=ident,
+                        note='Direct live.json edit; not an approved deployment')
+        return {'saved': True, 'path': str(path), 'monitoring': 'automatic',
+                'note': 'Saved to actual live.json; independent agent will scan'}
+
+    @app.get('/demo/{window}')
+    def demo_window(window: Literal['server', 'device']):
+        page = Path(__file__).resolve().parents[1] / 'demo' / 'two-windows.html'
+        return FileResponse(page)
+
     build = Path(__file__).resolve().parents[1] / 'frontend' / 'dist'
     if (build / 'assets').exists():
         app.mount('/assets', StaticFiles(directory=build / 'assets'), name='assets')
