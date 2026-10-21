@@ -20,7 +20,7 @@ def test_two_window_routes_and_existing_recovery(tmp_path):
         path = engine.node_dir('ICU-Node-01') / 'live.json'
         original = path.read_bytes()
         changed = json.loads(original)
-        changed['heart_rate']['upper_bpm'] = 160
+        changed['demo_heart_rate_upper_bpm'] = 160
         path.write_text(json.dumps(changed))
         assert path.read_bytes() != original
         engine.scan('ICU-Node-01')
