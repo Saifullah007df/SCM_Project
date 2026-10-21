@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AEGIS ICU — Two-window demo</title>
+<style>
+:root{font-family:system-ui,Arial;background:#0b1424;color:#eaf1fc}body{margin:0;padding:24px;max-width:1050px;margin:auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:26px;margin:0 0 8px}
+p,small{color:#b7c5da}nav a{color:#9bd2ff;margin-right:20px}section{background:#15233a;border:1px solid #33465f;border-radius:12px;padding:20px;margin-top:18px}
+label{display:block;margin:12px 0 8px}select,textarea,input{background:#0b1424;color:white;border:1px solid #536781;border-radius:6px;padding:10px}
+textarea{box-sizing:border-box;width:100%;min-height:310px;font:15px/1.6 monospace;resize:vertical}
+button{background:#2372c4;color:white;border:0;border-radius:7px;padding:11px 16px;margin:10px 10px 4px 0;cursor:pointer}
+button:disabled{opacity:.5}.pill{padding:6px 10px;border-radius:14px;background:#33465f}.ok{color:#7de5a5}.bad{color:#ff9b9b}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b1424;padding:12px;border-radius:7px;max-height:350px;overflow:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.metric{background:#0b1424;padding:14px;border-radius:8px}
+</style></head><body>
+<header><div><h1 id="heading">AEGIS ICU</h1><small>Local academic simulation · no real ICU devices</small></div><span class="pill" id="connection">Connecting…</span></header>
+<nav><a href="/demo/server" target="_blank">Open Server window</a><a href="/demo/device" target="_blank">Open Device window</a><a href="/">Existing application</a></nav>
+<section><label for="node">Simulated ICU monitor</label><select id="node"><option>ICU-Node-01</option><option>ICU-Node-02</option><option>ICU-Node-03</option></select><p id="message">Sign in to the existing application first, then open these two windows.</p></section>
+<div id="device" hidden>
+<section><h2>Actual deployed JSON file</h2><p id="path"></p><p>Edit the JSON below and click <strong>Save live.json</strong>. This writes to the real deployed file; it does not approve a baseline change. You may alternatively edit the displayed path in VS Code and press Ctrl+S.</p>
+<textarea id="editor" spellcheck="false" aria-label="Live configuration JSON"></textarea>
+<div><button id="save">Save live.json (unauthorized edit)</button><button id="reload">Reload file from disk</button></div>
+<p id="warning">The independent agent checks every configured polling interval. A fast recovery may overwrite your edit before you can observe it here.</p></section></div>
+<div id="server" hidden>
+<section><h2>Live baseline enforcement</h2><div class="grid">
+<div class="metric">Approved release<div id="release">—</div></div>
+<div class="metric">Disk integrity<div id="disk">—</div></div>
+<div class="metric">Effective monitor<div id="effective">—</div></div>
+<div class="metric">Agent result<div id="status">—</div></div></div>
+<p>Monitoring and rollback happen automatically. This window only observes the existing engine; it does not initiate recovery.</p></section>
+<section><h2>Latest incident evidence</h2><pre id="incident">No incident recorded for selected node.</pre></section></div>
+<script>
+const mode=location.pathname.endsWith('/device')?'device':'server';
+document.getElementById('heading').textContent='AEGIS ICU — '+(mode==='device'?'Device':'Server');
+document.getElementById(mode).hidden=false;
+const el=id=>document.getElementById(id), node=()=>el('node').value;
+async function request(path,method='GET',body){
+ const headers={'Content-Type':'application/json'};
+ if(method!=='GET'){const me=await fetch('/api/v1/auth/me',{credentials:'same-origin'});if(!me.ok)throw Error('Sign in as Operator in the existing application first');headers['x-csrf-token']=(await me.json()).csrf;}
+ const response=await fetch('/api/v1'+path,{method,headers,credentials:'same-origin',body:body?JSON.stringify(body):undefined,cache:'no-store'});
+ const data=await response.json();if(!response.ok)throw Error(data.detail||'Request failed');return data;
+}
+let dirty=false;el('editor').addEventListener('input',()=>dirty=true);
+async function refresh(){
+ try{
+ const data=await request('/nodes/'+node());
+ el('connection').textContent='Connected';el('connection').className='pill ok';
+ if(mode==='device'){
+ const f=await request('/demo/live-file/'+node());
+ el('path').textContent=f.path;
+ if(!dirty){el('editor').value=f.content;}
+ el('message').textContent='Current file: '+(f.disk_digest===f.approved_digest?'Matches approved baseline':'UNAUTHORIZED DRIFT — awaiting scan');
+ }else{
+ el('release').textContent=data.release?.version||data.release_id||'—';
+ const same=data.disk_digest===data.release?.digest;
+ el('disk').textContent=same?'Approved bytes verified':'DRIFT: disk differs from baseline';
+ el('disk').className=same?'ok':'bad';
+ el('effective').textContent=data.effective?.digest===data.release?.digest?'Approved configuration loaded':'Effective state differs / pending';
+ el('status').textContent=data.display_state+' · '+data.connectivity;
+ const incidents=await request('/incidents');
+ const current=incidents.find(i=>i.node_id===node());
+ el('incident').textContent=current?JSON.stringify({id:current.id,reason:current.reason,detected_at:current.detected_at,recovery:current.recovery,recovered_at:current.recovered_at,recovery_ms:current.recovery_ms,attempts:current.attempts,review:current.review},null,2):'No incident recorded for selected node.';
+ el('message').textContent='Agent polling automatically; view refreshes every 2 seconds.';
+ }
+ }catch(e){el('connection').textContent='Connection error';el('connection').className='pill bad';el('message').textContent=e.message;}
+}
+el('save').onclick=async()=>{
+ try{JSON.parse(el('editor').value);const result=await request('/demo/live-file/'+node(),'POST',{content:el('editor').value});dirty=false;el('message').textContent='Saved to '+result.path+' — agent will detect and restore without pressing Scan';}
+ catch(e){el('message').textContent=e.message;}
+};
+el('reload').onclick=()=>{dirty=false;refresh()};
+el('node').onchange=()=>{dirty=false;refresh()};
+refresh();setInterval(refresh,2000);
+</script></body></html>
