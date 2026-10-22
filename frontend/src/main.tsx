@@ -50,6 +50,7 @@ import "@fontsource/dm-sans/600.css";
 type Page =
   | "overview"
   | "nodes"
+  | "live-demo"
   | "baselines"
   | "incidents"
   | "changes"
@@ -58,6 +59,7 @@ type Page =
 const nav = [
   ["overview", "Overview", LayoutDashboard],
   ["nodes", "Monitor nodes", Server],
+  ["live-demo", "Live ICU Monitoring", Activity],
   ["baselines", "Baselines", GitBranch],
   ["incidents", "Incidents", ShieldAlert],
   ["changes", "Change control", GitPullRequest],
@@ -68,6 +70,10 @@ const titles: Record<Page, [string, string]> = {
   overview: [
     "Every change, accounted for.",
     "Baseline integrity, recovery evidence and change governance in one place.",
+  ],
+  "live-demo": [
+    "Live ICU configuration monitoring.",
+    "Manually edit a real deployed JSON file and observe automatic baseline recovery.",
   ],
   nodes: [
     "A fleet you can inspect.",
@@ -1403,6 +1409,9 @@ function App() {
                   </p>
                 </>
               )}
+              {page === "live-demo" && (
+                <LiveDemo account={account} snapshot={snapshot} />
+              )}
               {page === "settings" && (
                 <>
                   <div className="detail-grid">
@@ -2003,6 +2012,138 @@ function ConfigTable({
     </div>
   );
 }
+
+type LiveFile = {
+  node_id: string;
+  path: string;
+  content: string;
+  approved_digest: string;
+  disk_digest: string;
+};
+
+function LiveDemo({ account, snapshot }: { account: Account; snapshot: Snapshot }) {
+  const [selected, setSelected] = useState("ICU-Node-01");
+  const [file, setFile] = useState<LiveFile | null>(null);
+  const [editor, setEditor] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [failure, setFailure] = useState("");
+  const canEdit = account.roles.includes("operator") && snapshot.overview.demo;
+  const monitor = snapshot.overview.nodes.find((item) => item.id === selected);
+  const incident = snapshot.incidents.find((item) => item.node_id === selected);
+  const related = incident
+    ? snapshot.events.filter((event) => event.incident_id === incident.id).slice(-8)
+    : [];
+
+  const readFile = useCallback(async (replaceEditor: boolean) => {
+    try {
+      const latest = await api<LiveFile>("/demo/live-file/" + selected);
+      setFile(latest);
+      if (replaceEditor) {
+        setEditor(latest.content);
+        setDirty(false);
+      }
+      setFailure("");
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : "Unable to read live JSON");
+    }
+  }, [selected]);
+
+  useEffect(() => {
+    setFile(null);
+    setEditor("");
+    setDirty(false);
+    setFeedback("");
+    void readFile(true);
+  }, [readFile]);
+
+  useEffect(() => {
+    const timer = setInterval(() => void readFile(!dirty), 2000);
+    return () => clearInterval(timer);
+  }, [readFile, dirty]);
+
+  async function save() {
+    if (!canEdit) return;
+    try {
+      JSON.parse(editor);
+    } catch {
+      setFailure("Invalid JSON syntax. Correct the file before saving.");
+      return;
+    }
+    setSaving(true);
+    setFailure("");
+    try {
+      await api("/demo/live-file/" + selected, "POST", { content: editor }, account.csrf);
+      setDirty(false);
+      setFeedback("Saved directly to live.json without approval. The independent agent will detect drift and restore the approved release automatically.");
+      await readFile(true);
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="panel-body">
+        <label htmlFor="live-demo-node">Synthetic ICU monitor</label>
+        <select id="live-demo-node" value={selected} onChange={(e) => setSelected(e.target.value)}>
+          {snapshot.overview.nodes.map((item) => (
+            <option key={item.id} value={item.id}>{item.id}</option>
+          ))}
+        </select>
+        <p className="muted">Two panels in this application. Agent polling: {snapshot.overview.poll_seconds}s. No manual scan required.</p>
+      </div>
+      {failure && <div className="banner danger" role="alert">{failure}</div>}
+      {feedback && <div className="banner success" role="status">{feedback}</div>}
+      <div className="detail-grid">
+        <Panel title="Server — automatic drift detection and recovery" extra={monitor ? <Badge value={monitor.display_state} /> : undefined}>
+          <div className="panel-body">
+            <Meta label="Approved baseline">{monitor?.release.version || "Unavailable"} · {monitor?.release.config.demo_heart_rate_upper_bpm ?? "—"} BPM</Meta>
+            <Meta label="Live file integrity">
+              {file ? file.disk_digest === file.approved_digest ? "Matches approved baseline" : "UNAUTHORIZED DRIFT DETECTED ON DISK" : "Loading…"}
+            </Meta>
+            <Meta label="Effective simulator state">
+              {monitor?.effective.digest === monitor?.release.digest ? "Approved baseline loaded and verified" : "Mismatch / verification pending"}
+            </Meta>
+            <Meta label="Agent result">{monitor ? friendly(monitor.display_state) : "Loading…"}</Meta>
+            <Meta label="Last scan">{stamp(monitor?.last_scan || undefined)}</Meta>
+            <Meta label="Latest incident">
+              {incident ? <><b>{short(incident.id, 18)}</b> · {friendly(incident.recovery)} · {incident.recovery_ms ?? "—"} ms</> : "No incident yet"}
+            </Meta>
+            {incident && <p className="muted">{incident.reason} · Detected {stamp(incident.detected_at)} · Review: {friendly(incident.review)}</p>}
+            <h3>Recovery timeline</h3>
+            {related.length ? <ol className="timeline">{related.map((event) => (
+              <li key={event.seq}><b>{friendly(event.phase || event.action)}</b><small>{stamp(event.time)} · {event.actor}</small></li>
+            ))}</ol> : <p className="muted">Incident evidence appears here after the agent detects a modification.</p>}
+          </div>
+        </Panel>
+        <Panel title="Device — manually edit the deployed JSON">
+          <div className="panel-body">
+            <Meta label="Actual file path"><code style={{ overflowWrap: "anywhere" }}>{file?.path || "Loading…"}</code></Meta>
+            <p className="muted">Change the existing <code>demo_heart_rate_upper_bpm</code> from 120 to 160 and save. This writes to the real deployed JSON file, not an approved release.</p>
+            <textarea aria-label="Editable live ICU JSON" spellCheck={false} rows={16}
+              style={{ width: "100%", boxSizing: "border-box", fontFamily: "monospace", fontSize: 13 }}
+              value={editor} onChange={(e) => { setEditor(e.target.value); setDirty(true); }}
+              readOnly={!canEdit} />
+            <div className="heading-actions">
+              <button className="button primary" onClick={() => void save()} disabled={!canEdit || saving || !dirty}>
+                <FileCheck2 size={16} /> {saving ? "Saving…" : "Save live.json"}
+              </button>
+              <button className="button" onClick={() => void readFile(true)}><RefreshCw size={15} /> Reload from disk</button>
+            </div>
+            {!canEdit && <p className="muted">Editing requires an Operator account and demo mode.</p>}
+            <p className="muted">After recovery, Reload from disk shows the restored file. An external VS Code edit of this path works too.</p>
+          </div>
+        </Panel>
+      </div>
+      <p className="footnote">Synthetic academic demonstration only. Automatic detection and recovery are performed by the existing independent agent; this view does not call the scan or recovery endpoints.</p>
+    </>
+  );
+}
+
 function Login({ onLogin }: { onLogin: (u: Account) => void }) {
   const [username, setUsername] = useState("operator"),
     [password, setPassword] = useState(""),
