@@ -1,3 +1,18 @@
+# Integrated Live ICU Monitoring demonstration
+
+**Preferred interface:** Sign in to the existing AEGIS ICU dashboard at http://127.0.0.1:8000 as Operator, then click **Live ICU Monitoring** in the existing sidebar. This section contains exactly two side-by-side panels: **Server** (automatic drift detection, recovery status, incident evidence) and **Device** (editable actual deployed JSON file and Save). No separate browser pages are needed.
+
+1. Start `bash run.sh` after `git pull`. Log in as Operator.
+2. Open **Live ICU Monitoring**, select ICU-Node-01.
+3. In **Device**, edit `"demo_heart_rate_upper_bpm": 120` to `160` and click **Save live.json**.
+4. Do not click Run scan. Wait for the independent agent's polling cycle (10 seconds by default).
+5. Observe the **Server** panel's latest incident, recovery timeline and effective-state verification. Recovery may be faster than the two-second UI refresh, so the persistent incident is stronger evidence than the brief drift indicator.
+6. In **Device**, click **Reload from disk** to show the restored 120 BPM JSON.
+
+The earlier standalone /demo/server and /demo/device pages remain as optional legacy demonstration views; the new integrated sidebar section is the recommended workflow.
+
+---
+
 # Two-window manual JSON drift demonstration
 
 This is an **additive** demonstration of the existing independent monitoring and recovery engine. It is a **synthetic academic ICU monitor**, not a medical device.
