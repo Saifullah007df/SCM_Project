@@ -27,6 +27,7 @@ import {
   SlidersHorizontal,
   Terminal,
   TriangleAlert,
+  UserRound,
   WifiOff,
   X,
 } from "lucide-react";
@@ -442,6 +443,11 @@ function App() {
             <b>{nav.find((n) => n[0] === page)?.[1]}</b>
           </div>
           <div className="topbar-right">
+            <span className="header-profile" aria-label="Student profile PRABANJAN-24MIS0142">
+              <span className="header-profile-icon"><UserRound size={13} strokeWidth={1.8} /></span>
+              <span className="header-profile-name">PRABANJAN-24MIS0142</span>
+            </span>
+            <span className="topbar-rule" />
             <span className="environment">
               <span />
               SIMULATED ICU
